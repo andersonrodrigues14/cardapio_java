@@ -106,5 +106,30 @@ public class Main {
 
         historico.mostrarTotalItensVisualizados();
         historico.listaVisualizacoes();
+
+
+        System.out.println("-----------------------");
+
+        // PRECISO REMOVER UM ITEM DE CARDAPIO
+        Long idParaRemover = 2L;
+        boolean removido = database.removerItemCardapio(idParaRemover);
+        if (removido) {
+            System.out.println("Removido com sucesso! ID: " +  idParaRemover);
+        }else{
+            System.out.println("Item não encontrado! ID: " +  idParaRemover);
+        }
+
+        database.listaDeItensCardapio().forEach(System.out::println);
+
+        System.out.println("-----------------------");
+
+        // PRECISA ALTERAR O PRECO DE UM ITEM DO CARDAPIO
+        boolean alterado = database.alterarPrecoItemCardapio(1L, new BigDecimal("10.99"));
+        database.listaDeItensCardapio().forEach(System.out::println);
+
+        System.out.println("-----------------------");
+
+        // PRECISO AUDITAR AS MUDANCAS DE PRECO DOS ITENS DO CARDAPIO
+        database.imprimirRastroAuditoriaPrecos();
     }
 }
