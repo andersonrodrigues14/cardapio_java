@@ -2,14 +2,15 @@ package br.com.andersonrodriguesdev;
 
 import com.google.gson.Gson;
 
-import java.io.*;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 
 public class ServidorItensCardapioComSocket {
@@ -18,76 +19,57 @@ public class ServidorItensCardapioComSocket {
 
     public static void main(String[] args) throws Exception {
 
-        try (ExecutorService executorService = Executors.newFixedThreadPool(50)) {
+        Executor executor = Executors.newFixedThreadPool(50);
 
-            try (ServerSocket serverSocket = new ServerSocket(8000)) {
-                System.out.println("Servidor Iniciado");
+        try(ServerSocket serverSocket = new ServerSocket(8000)) {
+            System.out.println("Subiu servidor!");
 
-                while (true) {
-                    Socket clientSocket = serverSocket.accept();
-                    executorService.execute(() -> trataRequisicao(clientSocket));
-                }
+            while (true) {
+                Socket clientSocket = serverSocket.accept();
+                executor.execute(() -> trataRequisicao(clientSocket));
             }
+
         }
     }
 
     private static void trataRequisicao(Socket clientSocket) {
+
         try (clientSocket) {
+            InputStream clientIS = clientSocket.getInputStream();
 
-            System.out.println("Cliente conectado");
+            StringBuilder requestBuilder = new StringBuilder();
+            int data;
+            do {
+                data = clientIS.read();
+                requestBuilder.append((char) data);
+            } while (clientIS.available() > 0);
 
-            BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+            String request = requestBuilder.toString();
+            System.out.println(request);
+            System.out.println("\n\nChegou um novo request");
+
+            String[] requestChunks = request.split("\r\n\r\n");
+            String requestLineAndHeaders = requestChunks[0];
+            String[] requestLineAndHeadersChunks = requestLineAndHeaders.split("\r\n");
+            String requestLine = requestLineAndHeadersChunks[0];
+            String[] requestLineChunks = requestLine.split(" ");
+            String method = requestLineChunks[0];
+            String requestURI = requestLineChunks[1];
+            String httpVersion = requestLineChunks[2];
+
+            System.out.println("Method: " + method);
+            System.out.println("Request URI: " + requestURI);
+            System.out.println("HTTP Version: " + httpVersion);
+
+            Thread.sleep(250);
+
             OutputStream clientOS = clientSocket.getOutputStream();
             PrintStream clientOut = new PrintStream(clientOS);
 
-            // Lê headers
-            StringBuilder headersBuilder = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null && !line.isEmpty()) {
-                headersBuilder.append(line).append("\r\n");
-            }
+            if ("/itensCardapio.json".equals(requestURI)) {
+                System.out.println("Chamou arquivo itensCardapio.json");
 
-            String headers = headersBuilder.toString();
-            System.out.println("HEADERS:\n" + headers);
-
-            // Extrai a primeira linha da requisição (ex: POST /itens-cardapio HTTP/1.1)
-            String[] headerLines = headers.split("\r\n");
-            String requestLine = headerLines[0];
-            String[] requestParts = requestLine.split(" ");
-            if (requestParts.length < 2) {
-                clientOut.println("HTTP/1.1 400 Bad Request");
-                clientOut.println();
-                return;
-            }
-
-            String method = requestParts[0];
-            String requestURI = requestParts[1];
-
-            // Extrai Content-Length (se houver)
-            int contentLength = 0;
-            for (String header : headerLines) {
-                if (header.toLowerCase().startsWith("content-length:")) {
-                    contentLength = Integer.parseInt(header.split(":")[1].trim());
-                    break;
-                }
-            }
-
-            // Lê o corpo (se houver)
-            String body = "";
-            if (contentLength > 0) {
-                char[] bodyChars = new char[contentLength];
-                int read = reader.read(bodyChars, 0, contentLength);
-                body = new String(bodyChars, 0, read);
-                System.out.println("BODY:\n" + body);
-            }
-
-            System.out.println("#####################################");
-            System.out.println(method + " " + requestURI);
-
-            Gson gson = new Gson();
-
-            if (method.equals("GET") && requestURI.equals("/itensCardapio.json")) {
-                Path path = Paths.get("itensCardapio.json");
+                Path path = Path.of("itensCardapio.json");
                 String json = Files.readString(path);
 
                 clientOut.println("HTTP/1.1 200 OK");
@@ -95,51 +77,47 @@ public class ServidorItensCardapioComSocket {
                 clientOut.println();
                 clientOut.println(json);
 
-            } else if (method.equals("GET") && requestURI.equals("/itens-cardapio")) {
+            } else if ("GET".equals(method) && "/itens-cardapio".equals(requestURI)) {
+                System.out.println("Chamou listagem de itens de cardápio");
                 List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
+
+                Gson gson = new Gson();
                 String json = gson.toJson(listaItensCardapio);
 
                 clientOut.println("HTTP/1.1 200 OK");
                 clientOut.println("Content-type: application/json; charset=UTF-8");
                 clientOut.println();
                 clientOut.println(json);
-
-            } else if (method.equals("GET") && requestURI.equals("/itens-cardapio/total")) {
-                List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
+            } else if ("GET".equals(method) && "/itens-cardapio/total".equals(requestURI)) {
+                System.out.println("Chamou total de itens de cardápio");
+                int totalItens = database.listaDeItensCardapio().size();
 
                 clientOut.println("HTTP/1.1 200 OK");
-                clientOut.println("Content-type: application/json; charset=UTF-8");
                 clientOut.println();
-                clientOut.println(listaItensCardapio.size());
+                clientOut.println(totalItens);
+            } else if ("POST".equals(method) && "/itens-cardapio".equals(requestURI)) {
+                System.out.println("Chamou adição de itens de cardápio");
 
-            } else if (method.equals("POST") && requestURI.equals("/itens-cardapio")) {
-                if (body.isEmpty()) {
+                if (requestChunks.length == 1) {
                     clientOut.println("HTTP/1.1 400 Bad Request");
-                    clientOut.println();
-                    return;
                 }
+                String body = requestChunks[1];
 
-                try {
-                    ItemCardapio novoItem = gson.fromJson(body, ItemCardapio.class);
-                    database.adicionaItemCardapio(novoItem);
+                Gson gson = new Gson();
+                ItemCardapio item = gson.fromJson(body, ItemCardapio.class);
 
-                    clientOut.println("HTTP/1.1 201 Created");
-                    clientOut.println();
-                } catch (Exception e) {
-                    clientOut.println("HTTP/1.1 400 Bad Request");
-                    clientOut.println("Content-Type: text/plain; charset=UTF-8");
-                    clientOut.println();
-                    clientOut.println("Erro ao processar JSON: " + e.getMessage());
-                }
+                database.adicionaItemCardapio(item);
 
-            } else {
+                clientOut.println("HTTP/1.1 200 OK");
+            }
+            else {
+                System.out.println("URI não encontrada: " + requestURI);
                 clientOut.println("HTTP/1.1 404 Not Found");
-                clientOut.println();
             }
 
-        } catch (Exception e) {
-            System.err.println("Erro ao tratar requisição: " + e.getMessage());
-            e.printStackTrace();
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
         }
     }
+
 }
