@@ -5,13 +5,12 @@ import com.google.gson.Gson;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.List;
 
 public class GeradorItensCardapioJSON {
 
     public static void main(String[] args) throws IOException {
-        Database database = new Database();
+        Database database = new InMemoryDatabase();
         List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
 
         Gson gson = new Gson();

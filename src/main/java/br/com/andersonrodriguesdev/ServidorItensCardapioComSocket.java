@@ -15,7 +15,7 @@ import java.util.concurrent.Executors;
 
 public class ServidorItensCardapioComSocket {
 
-    private static final Database database = new Database();
+    private static final Database database = new SQLDatabase();
 
     public static void main(String[] args) throws Exception {
 
@@ -90,7 +90,7 @@ public class ServidorItensCardapioComSocket {
                 clientOut.println(json);
             } else if ("GET".equals(method) && "/itens-cardapio/total".equals(requestURI)) {
                 System.out.println("Chamou total de itens de cardápio");
-                int totalItens = database.listaDeItensCardapio().size();
+                int totalItens = database.totalItensCardapio();
 
                 clientOut.println("HTTP/1.1 200 OK");
                 clientOut.println();

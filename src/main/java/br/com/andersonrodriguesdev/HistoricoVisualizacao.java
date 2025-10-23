@@ -7,12 +7,12 @@ import java.util.Optional;
 
 public class HistoricoVisualizacao {
 
-    private final Database database;
+    private final InMemoryDatabase database;
 
     //ItemCardapio => Data e Hora
     private final Map<ItemCardapio, LocalDateTime> visualizacoes = new HashMap<>();
 
-    public HistoricoVisualizacao(Database database) {
+    public HistoricoVisualizacao(InMemoryDatabase database) {
         this.database = database;
     }
 
