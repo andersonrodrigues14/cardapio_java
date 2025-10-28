@@ -9,11 +9,22 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.text.NumberFormat;
+import java.time.YearMonth;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.FormatStyle;
 import java.util.List;
+import java.util.Locale;
+import java.util.ResourceBundle;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class ServidorItensCardapioComSocket {
+
+    private static final Logger logger = Logger.getLogger("Servidor Http Itens Cardapio");
 
     private static final Database database = new SQLDatabase();
 
@@ -22,7 +33,7 @@ public class ServidorItensCardapioComSocket {
         Executor executor = Executors.newFixedThreadPool(50);
 
         try(ServerSocket serverSocket = new ServerSocket(8000)) {
-            System.out.println("Subiu servidor!");
+            logger.info("Subiu servidor!");
 
             while (true) {
                 Socket clientSocket = serverSocket.accept();
@@ -45,8 +56,8 @@ public class ServidorItensCardapioComSocket {
             } while (clientIS.available() > 0);
 
             String request = requestBuilder.toString();
-            System.out.println(request);
-            System.out.println("\n\nChegou um novo request");
+            logger.finest(request);
+            logger.fine("\n\nChegou um novo request");
 
             String[] requestChunks = request.split("\r\n\r\n");
             String requestLineAndHeaders = requestChunks[0];
@@ -57,65 +68,147 @@ public class ServidorItensCardapioComSocket {
             String requestURI = requestLineChunks[1];
             String httpVersion = requestLineChunks[2];
 
-            System.out.println("Method: " + method);
-            System.out.println("Request URI: " + requestURI);
-            System.out.println("HTTP Version: " + httpVersion);
+            logger.finer(() -> "Method: " + method);
+            logger.finer(() ->"Request URI: " + requestURI);
+            logger.finer(() ->"HTTP Version: " + httpVersion);
 
             Thread.sleep(250);
 
             OutputStream clientOS = clientSocket.getOutputStream();
             PrintStream clientOut = new PrintStream(clientOS);
 
-            if ("/itensCardapio.json".equals(requestURI)) {
-                System.out.println("Chamou arquivo itensCardapio.json");
+            try {
+                if ("/itensCardapio.json".equals(requestURI)) {
+                    logger.fine("Chamou arquivo itensCardapio.json");
 
-                Path path = Path.of("itensCardapio.json");
-                String json = Files.readString(path);
+                    Path path = Path.of("itensCardapio.json");
+                    String json = Files.readString(path);
 
-                clientOut.println("HTTP/1.1 200 OK");
-                clientOut.println("Content-type: application/json; charset=UTF-8");
-                clientOut.println();
-                clientOut.println(json);
+                    clientOut.println("HTTP/1.1 200 OK");
+                    clientOut.println("Content-type: application/json; charset=UTF-8");
+                    clientOut.println();
+                    clientOut.println(json);
 
-            } else if ("GET".equals(method) && "/itens-cardapio".equals(requestURI)) {
-                System.out.println("Chamou listagem de itens de cardápio");
-                List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
+                } else if ("GET".equals(method) && "/itens-cardapio".equals(requestURI)) {
+                    logger.fine("Chamou listagem de itens de cardápio");
+                    List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
 
-                Gson gson = new Gson();
-                String json = gson.toJson(listaItensCardapio);
+                    Gson gson = new Gson();
+                    String json = gson.toJson(listaItensCardapio);
 
-                clientOut.println("HTTP/1.1 200 OK");
-                clientOut.println("Content-type: application/json; charset=UTF-8");
-                clientOut.println();
-                clientOut.println(json);
-            } else if ("GET".equals(method) && "/itens-cardapio/total".equals(requestURI)) {
-                System.out.println("Chamou total de itens de cardápio");
-                int totalItens = database.totalItensCardapio();
+                    clientOut.println("HTTP/1.1 200 OK");
+                    clientOut.println("Content-type: application/json; charset=UTF-8");
+                    clientOut.println();
+                    clientOut.println(json);
+                } else if ("GET".equals(method) && "/itens-cardapio/total".equals(requestURI)) {
+                    logger.fine("Chamou total de itens de cardápio");
+                    int totalItens = database.totalItensCardapio();
 
-                clientOut.println("HTTP/1.1 200 OK");
-                clientOut.println();
-                clientOut.println(totalItens);
-            } else if ("POST".equals(method) && "/itens-cardapio".equals(requestURI)) {
-                System.out.println("Chamou adição de itens de cardápio");
+                    clientOut.println("HTTP/1.1 200 OK");
+                    clientOut.println();
+                    clientOut.println(totalItens);
+                } else if ("POST".equals(method) && "/itens-cardapio".equals(requestURI)) {
+                    logger.fine("Chamou adição de itens de cardápio");
 
-                if (requestChunks.length == 1) {
-                    clientOut.println("HTTP/1.1 400 Bad Request");
+                    if (requestChunks.length == 1) {
+                        clientOut.println("HTTP/1.1 400 Bad Request");
+                    }
+                    String body = requestChunks[1];
+
+                    Gson gson = new Gson();
+                    ItemCardapio item = gson.fromJson(body, ItemCardapio.class);
+
+                    database.adicionaItemCardapio(item);
+
+                    clientOut.println("HTTP/1.1 200 OK");
+                } else if ("GET".equals(method) && "/".equals(requestURI)) {
+                    logger.fine("Chamou página raiz");
+
+                    List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
+
+                    Locale locale = "/en".equals(requestURI) ? Locale.US : Locale.of("pt", "BR");
+                    NumberFormat formatadorMoeda = NumberFormat.getCurrencyInstance(locale);
+                    ResourceBundle mensagens = ResourceBundle.getBundle("mensagens", locale);
+                    DateTimeFormatter formatterDataHora = DateTimeFormatter.ofLocalizedDateTime(FormatStyle.LONG)
+                            .withLocale(locale);
+                    DateTimeFormatter formatterMesAno = DateTimeFormatter.ofPattern("MMMM/yyyy")
+                            .withLocale(locale);
+
+                    StringBuilder htmlTodosItens = new StringBuilder();
+                    for (ItemCardapio item : listaItensCardapio) {
+                        String htmlPrecoItem;
+                        if (item.precoComDesconto() == null) {
+                            htmlPrecoItem = "<strong>" + formatadorMoeda.format(item.preco()) + "</strong>";
+                        } else {
+                            htmlPrecoItem = "<mark>Em promoção</mark> <strong>" + formatadorMoeda.format(item.precoComDesconto()) + "</strong> <s>" + formatadorMoeda.format(item.preco()) + "</s>";
+                        }
+
+                        String categoria = mensagens.getString("categoria.cardapio." + item.categoria().name().toLowerCase());
+
+                        String htmlItem = """
+                                    <article>
+                                        <kbd>%s</kbd>
+                                        <h3>%s</h3>
+                                        <p>%s</p>
+                                        %s
+                                    </article>
+                                """.formatted(categoria, item.nome(), item.descricao(), htmlPrecoItem);
+                        htmlTodosItens.append(htmlItem);
+                    }
+
+
+                    String html = """
+                            <!DOCTYPE html>
+                            <html lang="en">
+                            <head>
+                                <meta charset="UTF-8">
+                                <title>Florinda Eats - Cardápio</title>
+                                <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css">
+                            </head>
+                            <body>
+                            
+                            <header class="container">
+                                <hgroup>
+                                    <h1>Florinda Eats</h1>
+                                    <p>O sabor da Vila direto pra você</p>
+                                </hgroup>
+                            </header>
+                            
+                            <main class="container">
+                                <h2>Cardápio</h2>
+                            
+                            %s
+                            
+                            </main>
+                        
+                            <footer class="container">
+                                <p><small><em>Preços de acordo com %s</em></small></p>
+                                <p><strong>Florinda Eats</strong> Todos os direitos reservados - %s</p>
+                            </footer>
+                            </body>
+                            </html>
+                            """.formatted(htmlTodosItens.toString(), formatterDataHora.format(ZonedDateTime.now())
+                            , formatterMesAno.format(YearMonth.now()));
+
+                    clientOut.print("HTTP/1.1 200 OK\r\n");
+                    clientOut.print("Content-type: text/html; charset=UTF-8\r\n\r\n");
+                    clientOut.print(html);
+                    clientOut.print("\r\n");
+                }else {
+                    logger.warning(() -> "URI não encontrada: " + requestURI);
+                    clientOut.println("HTTP/1.1 404 Not Found");
                 }
-                String body = requestChunks[1];
+            } catch (Exception ex) {
+                logger.log(Level.SEVERE, ex, () -> "Erro ao tratar " + method + " " + requestURI);
 
-                Gson gson = new Gson();
-                ItemCardapio item = gson.fromJson(body, ItemCardapio.class);
-
-                database.adicionaItemCardapio(item);
-
-                clientOut.println("HTTP/1.1 200 OK");
-            }
-            else {
-                System.out.println("URI não encontrada: " + requestURI);
-                clientOut.println("HTTP/1.1 404 Not Found");
+                clientOut.println("HTTP/1.1 500 Internal Server Error");
+                clientOut.println();
+                clientOut.println(ex.getMessage());
             }
 
         } catch (Exception ex) {
+            //logger.severe("Erro no servidor");
+            logger.log(Level.SEVERE, "Erro no servidor", ex);
             throw new RuntimeException(ex);
         }
     }
