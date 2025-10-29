@@ -2,11 +2,10 @@ package br.com.andersonrodriguesdev;
 
 import com.google.gson.Gson;
 
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.io.PrintStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.NumberFormat;
@@ -24,7 +23,7 @@ import java.util.logging.Logger;
 
 public class ServidorItensCardapioComSocket {
 
-    private static final Logger logger = Logger.getLogger("Servidor Http Itens Cardapio");
+    private static final Logger logger = Logger.getLogger(ServidorItensCardapioComSocket.class.getName());
 
     private static final Database database = new SQLDatabase();
 
@@ -69,8 +68,8 @@ public class ServidorItensCardapioComSocket {
             String httpVersion = requestLineChunks[2];
 
             logger.finer(() -> "Method: " + method);
-            logger.finer(() ->"Request URI: " + requestURI);
-            logger.finer(() ->"HTTP Version: " + httpVersion);
+            logger.finer(() -> "Request URI: " + requestURI);
+            logger.finer(() -> "HTTP Version: " + httpVersion);
 
             Thread.sleep(250);
 
@@ -93,13 +92,32 @@ public class ServidorItensCardapioComSocket {
                     logger.fine("Chamou listagem de itens de cardápio");
                     List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
 
-                    Gson gson = new Gson();
-                    String json = gson.toJson(listaItensCardapio);
+                    String mediaType = "application/json";
+                    for (int i = 1; i < requestLineAndHeadersChunks.length; i++) {
+                        String header = requestLineAndHeadersChunks[i];
+                        if (header.contains("Accept")) {
+                            logger.info(header);
+                            mediaType = header.replace("Accept: ", "");
+                        }
+                    }
 
-                    clientOut.println("HTTP/1.1 200 OK");
-                    clientOut.println("Content-type: application/json; charset=UTF-8");
-                    clientOut.println();
-                    clientOut.println(json);
+                    byte[] body;
+                    if ("application/x-java-serialized-object".equals(mediaType)) {
+                        logger.info("Enviando objeto java serializado");
+                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                        ObjectOutputStream oos = new ObjectOutputStream(bos);
+                        oos.writeObject(listaItensCardapio);
+                        body = bos.toByteArray();
+                    } else {
+                        Gson gson = new Gson();
+                        String json = gson.toJson(listaItensCardapio);
+                        body = json.getBytes(StandardCharsets.UTF_8);
+                    }
+
+                    clientOS.write("HTTP/1.1 200 OK\r\n".getBytes(StandardCharsets.UTF_8));
+                    clientOS.write(("Content-type: " + mediaType + "; charset=UTF-8\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+                    clientOS.write(body);
+                    clientOS.flush();
                 } else if ("GET".equals(method) && "/itens-cardapio/total".equals(requestURI)) {
                     logger.fine("Chamou total de itens de cardápio");
                     int totalItens = database.totalItensCardapio();
@@ -121,7 +139,7 @@ public class ServidorItensCardapioComSocket {
                     database.adicionaItemCardapio(item);
 
                     clientOut.println("HTTP/1.1 200 OK");
-                } else if ("GET".equals(method) && "/".equals(requestURI)) {
+                } else if ("GET".equals(method) && ("/".equals(requestURI) || "/en".equals(requestURI))) {
                     logger.fine("Chamou página raiz");
 
                     List<ItemCardapio> listaItensCardapio = database.listaDeItensCardapio();
@@ -194,23 +212,19 @@ public class ServidorItensCardapioComSocket {
                     clientOut.print("Content-type: text/html; charset=UTF-8\r\n\r\n");
                     clientOut.print(html);
                     clientOut.print("\r\n");
-                }else {
-                    logger.warning(() -> "URI não encontrada: " + requestURI);
+                } else {
+                    logger.warning("URI não encontrada: " + requestURI);
                     clientOut.println("HTTP/1.1 404 Not Found");
                 }
             } catch (Exception ex) {
                 logger.log(Level.SEVERE, ex, () -> "Erro ao tratar " + method + " " + requestURI);
-
                 clientOut.println("HTTP/1.1 500 Internal Server Error");
-                clientOut.println();
-                clientOut.println(ex.getMessage());
             }
 
         } catch (Exception ex) {
-            //logger.severe("Erro no servidor");
-            logger.log(Level.SEVERE, "Erro no servidor", ex);
+            //  logger.severe("Erro no servidor");
+            logger.log(Level.SEVERE, "Erro fatal no servidor", ex);
             throw new RuntimeException(ex);
         }
     }
-
 }
